@@ -30,6 +30,7 @@
 `source venv/bin/activate`
 
 **В директории проекта установим зависимости, используя `pip` и файл `requirements.txt` командой:**
+
 `pip install -r requirements.txt`
 
 ## Запуск
