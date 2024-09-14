@@ -18,18 +18,8 @@ class DetmirApiSpider(scrapy.Spider):
     def start_requests(self):
         for url in self.start_urls:
             parsed_url = urlparse(url)
-            category = parsed_url.path.split('/')[-2]
-            params = {
-                'filter': f'categories[].alias:{category};platform:web;promo:false;site:detmir;withregion:RU-MOW',
-                'expand': 'meta.filter.info,meta.filters.delivery_speed,webp',
-                'exclude': 'stores',
-                'limit': self.limit,
-                'sort': 'popularity:desc',
-                'platform': 'web',
-                'offset': 0
-            }
-
-            api_url = f'{self.api_url}?{self._params_to_query_string(params)}'
+            category = parsed_url.path.strip('/').split('/')[-1]
+            api_url = self.build_api_url(category, offset=0)
             yield scrapy.Request(url=api_url, callback=self.parse, meta={'category': category, 'offset': 0})
 
     def parse(self, response):
@@ -39,7 +29,10 @@ class DetmirApiSpider(scrapy.Spider):
             rpc = product['id']
             product_url = product['link']['web_url']
             title = product['title']
-            brand = product['brands'][0]['title']
+
+            brand = ''
+            if product['brands']:
+                brand = product['brands'][0]['title']
 
             marketing_tags = []
             for label in product['labels']:
@@ -60,16 +53,18 @@ class DetmirApiSpider(scrapy.Spider):
             else:
                 stock['in_stock'] = False
 
-            assets = {'main_image': product['pictures'][0]['original'], 'set_images': []}
-            for image in product['pictures']:
-                assets['set_images'].append(image['original'])
+            assets = {'main_image': '', 'set_images': []}
+            if product['pictures']:
+                assets['main_image'] = product['pictures'][0]['original']
+                for image in product['pictures']:
+                    assets['set_images'].append(image['original'])
             assets['video'] = []
             if product['videos']:
                 assets['video'] = product['videos'][0]['url']
 
             description = product['description']
             description_selector = scrapy.Selector(text=description)
-            description = description_selector.xpath('//text()').get().replace('\r\n', '')
+            description = description_selector.xpath('//text()').get(default='').replace('\r\n', '')
 
             article = product['article']
             sex = product['sex']
@@ -115,19 +110,21 @@ class DetmirApiSpider(scrapy.Spider):
         if len(products) == self.limit:
             offset = response.meta['offset'] + self.limit
             category = response.meta['category']
-
-            params = {
-                'filter': f'categories[].alias:{category};platform:web;promo:false;site:detmir;withregion:RU-MOW',
-                'expand': 'meta.filter.info,meta.filters.delivery_speed,webp',
-                'exclude': 'stores',
-                'limit': self.limit,
-                'sort': 'popularity:desc',
-                'platform': 'web',
-                'offset': offset
-            }
-
-            next_page_url = f"{self.api_url}?{self._params_to_query_string(params)}"
+            next_page_url = self.build_api_url(category, offset)
             yield scrapy.Request(url=next_page_url, callback=self.parse, meta={'category': category, 'offset': offset})
+
+    def build_api_url(self, category, offset):
+        """Создает url для api-запроса с указанной категорией и смещением"""
+        params = {
+            'filter': f'categories[].alias:{category};platform:web;promo:false;site:detmir;withregion:RU-MOW',
+            'expand': 'meta.filter.info,meta.filters.delivery_speed,webp',
+            'exclude': 'stores',
+            'limit': self.limit,
+            'sort': 'popularity:desc',
+            'platform': 'web',
+            'offset': offset
+        }
+        return f'{self.api_url}?{self._params_to_query_string(params)}'
 
     def _params_to_query_string(self, params):
         """Функция для формирования query string из параметров"""
